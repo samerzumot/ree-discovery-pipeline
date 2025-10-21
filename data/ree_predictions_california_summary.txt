@@ -1,8 +1,0 @@
-REE Prediction Summary
-==============================
-Total points: 39900
-Mean probability: 0.3233
-Max probability: 0.9062
-Min probability: 0.0752
-High potential points (>0.5): 4298
-High potential points (>0.7): 1134
