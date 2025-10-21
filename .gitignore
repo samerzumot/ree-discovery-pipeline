@@ -35,15 +35,16 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Data files (keep sample data)
+# Large data files (keep sample data for deployment)
 data/*.geojson
-data/*.csv
+data/ree_predictions_california*
+
+# Keep essential files for deployment
 !data/test_predictions.csv
 !data/demo_predictions.csv
+!data/gee_features_california.csv
+!models/*.pkl
+!models/*.png
 
-# Models (keep trained models)
-models/*.pkl
-models/*.png
-
-# Streamlit
+# Streamlit secrets (keep template)
 .streamlit/secrets.toml
