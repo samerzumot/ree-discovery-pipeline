@@ -97,13 +97,13 @@ class REEVisualizationApp:
             return m
         
         # Create feature group for known REE occurrences
-        ree_group = folium.FeatureGroup(name="✅ Known REE Sites", show=True)
+        ree_group = folium.FeatureGroup(name="Known REE Sites", show=True)
         
         for idx, row in ree_df.iterrows():
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
                 radius=10,
-                popup=f"<b>✅ KNOWN REE SITE</b><br><b>{row.get('name', 'REE Occurrence')}</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Verified Deposit",
+                popup=f"<b>KNOWN REE SITE</b><br><b>{row.get('name', 'REE Occurrence')}</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Verified Deposit",
                 color='darkred',
                 fillColor='red',
                 fillOpacity=0.9,
@@ -153,8 +153,8 @@ class REEVisualizationApp:
             return m
         
         # Create feature groups for different types of points
-        known_group = folium.FeatureGroup(name=f"✅ Known REE Sites (>{threshold})", show=True)
-        pred_group = folium.FeatureGroup(name=f"🔮 New Discoveries (>{threshold})", show=True)
+        known_group = folium.FeatureGroup(name=f"Known REE Sites (>{threshold})", show=True)
+        pred_group = folium.FeatureGroup(name=f"New Discoveries (>{threshold})", show=True)
         
         for idx, row in high_potential.iterrows():
             # Check if this point matches training data coordinates
@@ -165,7 +165,7 @@ class REEVisualizationApp:
                 folium.CircleMarker(
                     location=[row.geometry.y, row.geometry.x],
                     radius=8,
-                    popup=f"<b>✅ KNOWN REE SITE</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: Verified Deposit<br><i>Used for model training</i>",
+                    popup=f"<b>KNOWN REE SITE</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: Verified Deposit<br><i>Used for model training</i>",
                     color='darkgreen',
                     fillColor='green',
                     fillOpacity=0.9,
@@ -176,7 +176,7 @@ class REEVisualizationApp:
                 folium.CircleMarker(
                     location=[row.geometry.y, row.geometry.x],
                     radius=8,
-                    popup=f"<b>🔮 NEW DISCOVERY</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: AI-Generated Prediction<br><i>Potential new REE site</i>",
+                    popup=f"<b>NEW DISCOVERY</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: AI-Generated Prediction<br><i>Potential new REE site</i>",
                     color='darkred',
                     fillColor='red',
                     fillOpacity=0.9,
@@ -318,10 +318,10 @@ class REEVisualizationApp:
         st.sidebar.header("Map Controls")
         
         # Layer visibility
-        show_occurrences = st.sidebar.checkbox("✅ Show Known REE Sites", value=True)
-        show_heatmap = st.sidebar.checkbox("🌡️ Show Prediction Heatmap", value=True)
-        show_predictions = st.sidebar.checkbox("🔮 Show New Discoveries", value=True)
-        show_training = st.sidebar.checkbox("✅ Show Known Sites", value=True)
+        show_occurrences = st.sidebar.checkbox("Show Known REE Sites", value=True)
+        show_heatmap = st.sidebar.checkbox("Show Prediction Heatmap", value=True)
+        show_predictions = st.sidebar.checkbox("Show New Discoveries", value=True)
+        show_training = st.sidebar.checkbox("Show Known Sites", value=True)
         
         # Heatmap opacity
         if show_heatmap:
@@ -357,9 +357,9 @@ class REEVisualizationApp:
         # Add legend
         st.markdown("""
         **Map Legend:**
-        - ✅ **Green circles**: Known REE sites (verified deposits)
-        - 🔮 **Red circles**: New discoveries (AI-generated predictions)
-        - 🌡️ **Heatmap**: Overall REE potential across the region
+        - **Green circles**: Known REE sites (verified deposits)
+        - **Red circles**: New discoveries (AI-generated predictions)
+        - **Heatmap**: Overall REE potential across the region
         """)
         
         map_data = st_folium(m, width=1200, height=600)
@@ -368,18 +368,18 @@ class REEVisualizationApp:
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("✅ Known REE Sites", len(self.ree_occurrences))
+            st.metric("Known REE Sites", len(self.ree_occurrences))
         
         with col2:
             if len(self.predictions) > 0:
-                st.metric("🔮 New Discoveries", len(self.predictions))
+                st.metric("New Discoveries", len(self.predictions))
             else:
-                st.metric("🔮 New Discoveries", 0)
+                st.metric("New Discoveries", 0)
         
         with col3:
             if len(self.predictions) > 0:
                 high_potential = len(self.predictions[self.predictions['ree_probability'] > threshold])
-                st.metric(f"🔮 High Potential (>{threshold})", high_potential)
+                st.metric(f"High Potential (>{threshold})", high_potential)
             else:
                 st.metric(f"High Potential (>{threshold})", 0)
         
