@@ -367,28 +367,37 @@ class REEVisualizationApp:
         # Statistics
         col1, col2, col3, col4 = st.columns(4)
         
+        # Load training data to count known sites
+        training_data = self.load_training_data()
+        known_sites_count = len(training_data) if len(training_data) > 0 else 0
+        
+        # Count new discoveries (points not in training data)
+        new_discoveries_count = 0
+        high_potential_count = 0
+        max_prob = 0.0
+        
+        if len(self.predictions) > 0:
+            for idx, row in self.predictions.iterrows():
+                is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
+                if not is_training_site:
+                    new_discoveries_count += 1
+                    if row['ree_probability'] > threshold:
+                        high_potential_count += 1
+                
+                if row['ree_probability'] > max_prob:
+                    max_prob = row['ree_probability']
+        
         with col1:
-            st.metric("Known REE Sites", len(self.ree_occurrences))
+            st.metric("Known REE Sites", known_sites_count)
         
         with col2:
-            if len(self.predictions) > 0:
-                st.metric("New Discoveries", len(self.predictions))
-            else:
-                st.metric("New Discoveries", 0)
+            st.metric("New Discoveries", new_discoveries_count)
         
         with col3:
-            if len(self.predictions) > 0:
-                high_potential = len(self.predictions[self.predictions['ree_probability'] > threshold])
-                st.metric(f"High Potential (>{threshold})", high_potential)
-            else:
-                st.metric(f"High Potential (>{threshold})", 0)
+            st.metric(f"High Potential (>{threshold})", high_potential_count)
         
         with col4:
-            if len(self.predictions) > 0:
-                max_prob = self.predictions['ree_probability'].max()
-                st.metric("Max Probability", f"{max_prob:.3f}")
-            else:
-                st.metric("Max Probability", "N/A")
+            st.metric("Max Probability", f"{max_prob:.3f}")
         
         # Analysis tabs
         tab1, tab2, tab3 = st.tabs(["Feature Analysis", "Prediction Analysis", "Model Performance"])
