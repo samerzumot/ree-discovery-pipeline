@@ -138,10 +138,13 @@ class REEVisualizationApp:
         
         return m
     
-    def add_prediction_points(self, m, predictions_gdf, threshold=0.5):
+    def add_prediction_points(self, m, predictions_gdf, threshold=0.5, show_training=True):
         """Add ML-predicted REE potential points to the map."""
         if len(predictions_gdf) == 0:
             return m
+        
+        # Load training data to check for known sites
+        training_data = self.load_training_data()
         
         # Filter high-potential points
         high_potential = predictions_gdf[predictions_gdf['ree_probability'] >= threshold]
@@ -149,36 +152,76 @@ class REEVisualizationApp:
         if len(high_potential) == 0:
             return m
         
-        # Create feature group for ML predictions
-        pred_group = folium.FeatureGroup(name=f"🔮 ML Predictions (>{threshold})", show=True)
+        # Create feature groups for different types of points
+        known_group = folium.FeatureGroup(name=f"✅ Training Sites (>{threshold})", show=True)
+        pred_group = folium.FeatureGroup(name=f"🔮 New Predictions (>{threshold})", show=True)
         
         for idx, row in high_potential.iterrows():
-            # Color based on probability - use different colors from known sites
-            if row['ree_probability'] >= 0.8:
-                color = 'purple'
-                status = '🔥 Very High Potential'
-            elif row['ree_probability'] >= 0.6:
-                color = 'blue'
-                status = '⚠️ High Potential'
-            else:
-                color = 'green'
-                status = '🔍 Moderate Potential'
+            # Check if this point matches training data coordinates
+            is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
             
-            # Size based on probability
-            size = 6 if row['ree_probability'] >= 0.8 else 5
-            
-            folium.CircleMarker(
-                location=[row.geometry.y, row.geometry.x],
-                radius=size,
-                popup=f"<b>🔮 ML PREDICTION</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: {status}<br><i>AI-generated prediction</i>",
-                color='white',
-                fillColor=color,
-                fillOpacity=0.8,
-                weight=2
-            ).add_to(pred_group)
+            if is_training_site and show_training:
+                # This is a training site - mark as known
+                folium.CircleMarker(
+                    location=[row.geometry.y, row.geometry.x],
+                    radius=8,
+                    popup=f"<b>✅ TRAINING SITE</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: Known REE Site<br><i>Used for model training</i>",
+                    color='darkred',
+                    fillColor='orange',
+                    fillOpacity=0.9,
+                    weight=3
+                ).add_to(known_group)
+            elif not is_training_site:
+                # This is a new prediction - mark as ML prediction
+                if row['ree_probability'] >= 0.8:
+                    color = 'purple'
+                    status = '🔥 Very High Potential'
+                elif row['ree_probability'] >= 0.6:
+                    color = 'blue'
+                    status = '⚠️ High Potential'
+                else:
+                    color = 'green'
+                    status = '🔍 Moderate Potential'
+                
+                size = 6 if row['ree_probability'] >= 0.8 else 5
+                
+                folium.CircleMarker(
+                    location=[row.geometry.y, row.geometry.x],
+                    radius=size,
+                    popup=f"<b>🔮 NEW PREDICTION</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: {status}<br><i>AI-generated prediction</i>",
+                    color='white',
+                    fillColor=color,
+                    fillOpacity=0.8,
+                    weight=2
+                ).add_to(pred_group)
         
+        if show_training:
+            known_group.add_to(m)
         pred_group.add_to(m)
         return m
+    
+    def load_training_data(self):
+        """Load training data to check for known sites."""
+        try:
+            if os.path.exists('data/gee_features_california.csv'):
+                training_df = pd.read_csv('data/gee_features_california.csv')
+                return training_df
+            return pd.DataFrame()
+        except Exception as e:
+            print(f"Error loading training data: {e}")
+            return pd.DataFrame()
+    
+    def is_training_site(self, lon, lat, training_data, tolerance=0.01):
+        """Check if coordinates match training data within tolerance."""
+        if len(training_data) == 0:
+            return False
+        
+        # Check if coordinates are within tolerance of any training site
+        for _, row in training_data.iterrows():
+            if (abs(row['lon'] - lon) <= tolerance and 
+                abs(row['lat'] - lat) <= tolerance):
+                return True
+        return False
     
     def create_feature_analysis_plots(self, features_df):
         """Create feature analysis plots."""
@@ -290,6 +333,7 @@ class REEVisualizationApp:
         show_occurrences = st.sidebar.checkbox("✅ Show Known REE Sites", value=True)
         show_heatmap = st.sidebar.checkbox("🌡️ Show Prediction Heatmap", value=True)
         show_predictions = st.sidebar.checkbox("🔮 Show ML Predictions", value=True)
+        show_training = st.sidebar.checkbox("🟠 Show Training Sites", value=True)
         
         # Heatmap opacity
         if show_heatmap:
@@ -314,7 +358,7 @@ class REEVisualizationApp:
             m = self.add_prediction_heatmap(m, self.predictions, opacity)
         
         if show_predictions and len(self.predictions) > 0:
-            m = self.add_prediction_points(m, self.predictions, threshold)
+            m = self.add_prediction_points(m, self.predictions, threshold, show_training)
         
         # Add layer control
         folium.LayerControl().add_to(m)
@@ -326,7 +370,8 @@ class REEVisualizationApp:
         st.markdown("""
         **Map Legend:**
         - ✅ **Red circles**: Known REE sites (verified deposits)
-        - 🔮 **Purple/Blue/Green circles**: ML predictions (AI-generated potential)
+        - 🟠 **Orange circles**: Training sites (used for model training)
+        - 🔮 **Purple/Blue/Green circles**: New ML predictions (AI-generated potential)
         - 🌡️ **Heatmap**: Overall REE potential across the region
         """)
         
