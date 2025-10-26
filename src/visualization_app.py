@@ -92,22 +92,22 @@ class REEVisualizationApp:
         return m
     
     def add_ree_occurrences(self, m, ree_df):
-        """Add REE occurrence points to the map."""
+        """Add known REE occurrence points to the map."""
         if len(ree_df) == 0:
             return m
         
-        # Create feature group for REE occurrences
-        ree_group = folium.FeatureGroup(name="Known REE Occurrences", show=True)
+        # Create feature group for known REE occurrences
+        ree_group = folium.FeatureGroup(name="✅ Known REE Sites", show=True)
         
         for idx, row in ree_df.iterrows():
             folium.CircleMarker(
                 location=[row['lat'], row['lon']],
-                radius=8,
-                popup=f"<b>{row.get('name', 'REE Site')}</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}",
-                color='red',
+                radius=10,
+                popup=f"<b>✅ KNOWN REE SITE</b><br><b>{row.get('name', 'REE Occurrence')}</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Verified Deposit",
+                color='darkred',
                 fillColor='red',
-                fillOpacity=0.8,
-                weight=2
+                fillOpacity=0.9,
+                weight=3
             ).add_to(ree_group)
         
         ree_group.add_to(m)
@@ -139,7 +139,7 @@ class REEVisualizationApp:
         return m
     
     def add_prediction_points(self, m, predictions_gdf, threshold=0.5):
-        """Add high-potential prediction points to the map."""
+        """Add ML-predicted REE potential points to the map."""
         if len(predictions_gdf) == 0:
             return m
         
@@ -149,29 +149,32 @@ class REEVisualizationApp:
         if len(high_potential) == 0:
             return m
         
-        # Create feature group for predictions
-        pred_group = folium.FeatureGroup(name=f"High Potential Areas (>{threshold})", show=True)
+        # Create feature group for ML predictions
+        pred_group = folium.FeatureGroup(name=f"🔮 ML Predictions (>{threshold})", show=True)
         
         for idx, row in high_potential.iterrows():
-            # Color based on probability
+            # Color based on probability - use different colors from known sites
             if row['ree_probability'] >= 0.8:
-                color = 'red'
+                color = 'purple'
+                status = '🔥 Very High Potential'
             elif row['ree_probability'] >= 0.6:
-                color = 'orange'
+                color = 'blue'
+                status = '⚠️ High Potential'
             else:
-                color = 'yellow'
+                color = 'green'
+                status = '🔍 Moderate Potential'
             
             # Size based on probability
-            size = 4 if row['ree_probability'] >= 0.8 else 3
+            size = 6 if row['ree_probability'] >= 0.8 else 5
             
             folium.CircleMarker(
                 location=[row.geometry.y, row.geometry.x],
                 radius=size,
-                popup=f"<b>REE Potential Site</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: {'🔥 Very High' if row['ree_probability'] >= 0.8 else '⚠️ High' if row['ree_probability'] >= 0.6 else '🔍 Moderate'}",
-                color='black',
+                popup=f"<b>🔮 ML PREDICTION</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: {status}<br><i>AI-generated prediction</i>",
+                color='white',
                 fillColor=color,
                 fillOpacity=0.8,
-                weight=1
+                weight=2
             ).add_to(pred_group)
         
         pred_group.add_to(m)
@@ -284,9 +287,9 @@ class REEVisualizationApp:
         st.sidebar.header("Map Controls")
         
         # Layer visibility
-        show_occurrences = st.sidebar.checkbox("Show Known REE Occurrences", value=True)
-        show_heatmap = st.sidebar.checkbox("Show REE Potential Heatmap", value=True)
-        show_predictions = st.sidebar.checkbox("Show High Potential Points", value=True)
+        show_occurrences = st.sidebar.checkbox("✅ Show Known REE Sites", value=True)
+        show_heatmap = st.sidebar.checkbox("🌡️ Show Prediction Heatmap", value=True)
+        show_predictions = st.sidebar.checkbox("🔮 Show ML Predictions", value=True)
         
         # Heatmap opacity
         if show_heatmap:
@@ -318,24 +321,33 @@ class REEVisualizationApp:
         
         # Display map
         st.subheader("Interactive Map")
+        
+        # Add legend
+        st.markdown("""
+        **Map Legend:**
+        - ✅ **Red circles**: Known REE sites (verified deposits)
+        - 🔮 **Purple/Blue/Green circles**: ML predictions (AI-generated potential)
+        - 🌡️ **Heatmap**: Overall REE potential across the region
+        """)
+        
         map_data = st_folium(m, width=1200, height=600)
         
         # Statistics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Known REE Sites", len(self.ree_occurrences))
+            st.metric("✅ Known REE Sites", len(self.ree_occurrences))
         
         with col2:
             if len(self.predictions) > 0:
-                st.metric("Prediction Points", len(self.predictions))
+                st.metric("🔮 ML Predictions", len(self.predictions))
             else:
-                st.metric("Prediction Points", 0)
+                st.metric("🔮 ML Predictions", 0)
         
         with col3:
             if len(self.predictions) > 0:
                 high_potential = len(self.predictions[self.predictions['ree_probability'] > threshold])
-                st.metric(f"High Potential (>{threshold})", high_potential)
+                st.metric(f"🔮 High Potential (>{threshold})", high_potential)
             else:
                 st.metric(f"High Potential (>{threshold})", 0)
         
