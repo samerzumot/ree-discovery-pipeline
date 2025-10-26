@@ -160,9 +160,6 @@ class REEVisualizationApp:
             # Check if this point matches training data coordinates
             is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
             
-            # Debug output
-            print(f"Point {idx}: ({row.geometry.x:.3f}, {row.geometry.y:.3f}) - Training site: {is_training_site}")
-            
             if is_training_site and show_training:
                 # This is a training site - mark as known
                 folium.CircleMarker(
