@@ -212,38 +212,26 @@ class REEVisualizationApp:
         return False
     
     def add_training_sites(self, m, training_data):
-        """Add all training sites to the map with different colors for REE vs background."""
+        """Add only real REE training sites to the map (hide background points from users)."""
         if len(training_data) == 0:
             return m
         
-        # Create feature groups
+        # Only show REE sites (label=1), hide background points (label=0) from users
         ree_training_group = folium.FeatureGroup(name="Training REE Sites", show=True)
-        background_group = folium.FeatureGroup(name="Training Background", show=True)
         
         for idx, row in training_data.iterrows():
-            if row['label'] == 1:  # REE site
+            if row['label'] == 1:  # Only show REE sites, not background points
                 folium.CircleMarker(
                     location=[row['lat'], row['lon']],
                     radius=8,
-                    popup=f"<b>TRAINING REE SITE</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Used for model training<br><i>Known REE occurrence</i>",
+                    popup=f"<b>TRAINING REE SITE</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Used for model training<br><i>Verified REE occurrence</i>",
                     color='darkgreen',
                     fillColor='green',
                     fillOpacity=0.9,
                     weight=3
                 ).add_to(ree_training_group)
-            else:  # Background point
-                folium.CircleMarker(
-                    location=[row['lat'], row['lon']],
-                    radius=6,
-                    popup=f"<b>TRAINING BACKGROUND</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Used for model training<br><i>Non-REE location</i>",
-                    color='darkblue',
-                    fillColor='blue',
-                    fillOpacity=0.7,
-                    weight=2
-                ).add_to(background_group)
         
         ree_training_group.add_to(m)
-        background_group.add_to(m)
         return m
     
     def create_feature_analysis_plots(self, features_df):
@@ -400,7 +388,6 @@ class REEVisualizationApp:
         **Map Legend:**
         - **Green circles**: Known REE sites (verified deposits)
         - **Red circles**: New discoveries (AI-generated predictions)
-        - **Blue circles**: Training background points (non-REE locations)
         - **Heatmap**: Overall REE potential across the region
         """)
         
@@ -411,7 +398,8 @@ class REEVisualizationApp:
         
         # Load training data to count known sites
         training_data = self.load_training_data()
-        known_sites_count = len(training_data) if len(training_data) > 0 else 0
+        # Only count REE sites (label=1), not background points (label=0)
+        known_sites_count = len(training_data[training_data['label'] == 1]) if len(training_data) > 0 else 0
         
         # Count new discoveries (points not in training data)
         new_discoveries_count = 0
