@@ -138,13 +138,10 @@ class REEVisualizationApp:
         
         return m
     
-    def add_prediction_points(self, m, predictions_gdf, threshold=0.5, show_training=True):
-        """Add ML-predicted REE potential points to the map."""
+    def add_prediction_points(self, m, predictions_gdf, threshold=0.5, show_training=False):
+        """Add ML-predicted REE potential points to the map (only new discoveries)."""
         if len(predictions_gdf) == 0:
             return m
-        
-        # Load training data to check for known sites
-        training_data = self.load_training_data()
         
         # Filter high-potential points
         high_potential = predictions_gdf[predictions_gdf['ree_probability'] >= threshold]
@@ -152,39 +149,21 @@ class REEVisualizationApp:
         if len(high_potential) == 0:
             return m
         
-        # Create feature groups for different types of points
-        known_group = folium.FeatureGroup(name=f"Known REE Sites (>{threshold})", show=True)
+        # Only show new discoveries (not training sites)
         pred_group = folium.FeatureGroup(name=f"New Discoveries (>{threshold})", show=True)
         
         for idx, row in high_potential.iterrows():
-            # Check if this point matches training data coordinates
-            is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
-            
-            if is_training_site and show_training:
-                # This is a known REE site - mark in green
-                folium.CircleMarker(
-                    location=[row.geometry.y, row.geometry.x],
-                    radius=8,
-                    popup=f"<b>KNOWN REE SITE</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: Verified Deposit<br><i>Used for model training</i>",
-                    color='darkgreen',
-                    fillColor='green',
-                    fillOpacity=0.9,
-                    weight=3
-                ).add_to(known_group)
-            elif not is_training_site:
-                # This is a new discovery - mark in red
-                folium.CircleMarker(
-                    location=[row.geometry.y, row.geometry.x],
-                    radius=8,
-                    popup=f"<b>NEW DISCOVERY</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: AI-Generated Prediction<br><i>Potential new REE site</i>",
-                    color='darkred',
-                    fillColor='red',
-                    fillOpacity=0.9,
-                    weight=3
-                ).add_to(pred_group)
+            # All prediction points are new discoveries (not shown as training sites)
+            folium.CircleMarker(
+                location=[row.geometry.y, row.geometry.x],
+                radius=8,
+                popup=f"<b>NEW DISCOVERY</b><br>Probability: {row['ree_probability']:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Status: AI-Generated Prediction<br><i>Potential new REE site</i>",
+                color='darkred',
+                fillColor='red',
+                fillOpacity=0.9,
+                weight=3
+            ).add_to(pred_group)
         
-        if show_training:
-            known_group.add_to(m)
         pred_group.add_to(m)
         return m
     
@@ -210,29 +189,6 @@ class REEVisualizationApp:
                 abs(row['lat'] - lat) <= tolerance):
                 return True
         return False
-    
-    def add_training_sites(self, m, training_data):
-        """Add only real REE training sites to the map (hide background points from users)."""
-        if len(training_data) == 0:
-            return m
-        
-        # Only show REE sites (label=1), hide background points (label=0) from users
-        ree_training_group = folium.FeatureGroup(name="Training REE Sites", show=True)
-        
-        for idx, row in training_data.iterrows():
-            if row['label'] == 1:  # Only show REE sites, not background points
-                folium.CircleMarker(
-                    location=[row['lat'], row['lon']],
-                    radius=8,
-                    popup=f"<b>TRAINING REE SITE</b><br>Lat: {row['lat']:.4f}<br>Lon: {row['lon']:.4f}<br>Status: Used for model training<br><i>Verified REE occurrence</i>",
-                    color='darkgreen',
-                    fillColor='green',
-                    fillOpacity=0.9,
-                    weight=3
-                ).add_to(ree_training_group)
-        
-        ree_training_group.add_to(m)
-        return m
     
     def create_feature_analysis_plots(self, features_df):
         """Create feature analysis plots."""
@@ -344,7 +300,6 @@ class REEVisualizationApp:
         show_occurrences = st.sidebar.checkbox("Show Known REE Sites", value=True)
         show_heatmap = st.sidebar.checkbox("Show Prediction Heatmap", value=True)
         show_predictions = st.sidebar.checkbox("Show New Discoveries", value=True)
-        show_training = st.sidebar.checkbox("Show Training Sites", value=True)
         
         # Heatmap opacity
         if show_heatmap:
@@ -369,13 +324,7 @@ class REEVisualizationApp:
             m = self.add_prediction_heatmap(m, self.predictions, opacity)
         
         if show_predictions and len(self.predictions) > 0:
-            m = self.add_prediction_points(m, self.predictions, threshold, show_training)
-        
-        # Add training sites if requested
-        if show_training:
-            training_data = self.load_training_data()
-            if len(training_data) > 0:
-                m = self.add_training_sites(m, training_data)
+            m = self.add_prediction_points(m, self.predictions, threshold, show_training=False)
         
         # Add layer control
         folium.LayerControl().add_to(m)
@@ -401,21 +350,10 @@ class REEVisualizationApp:
         # Only count REE sites (label=1), not background points (label=0)
         known_sites_count = len(training_data[training_data['label'] == 1]) if len(training_data) > 0 else 0
         
-        # Count new discoveries (points not in training data)
-        new_discoveries_count = 0
-        high_potential_count = 0
-        max_prob = 0.0
-        
-        if len(self.predictions) > 0:
-            for idx, row in self.predictions.iterrows():
-                is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
-                if not is_training_site:
-                    new_discoveries_count += 1
-                    if row['ree_probability'] > threshold:
-                        high_potential_count += 1
-                
-                if row['ree_probability'] > max_prob:
-                    max_prob = row['ree_probability']
+        # Count new discoveries (all prediction points are new discoveries)
+        new_discoveries_count = len(self.predictions) if len(self.predictions) > 0 else 0
+        high_potential_count = len(self.predictions[self.predictions['ree_probability'] > threshold]) if len(self.predictions) > 0 else 0
+        max_prob = self.predictions['ree_probability'].max() if len(self.predictions) > 0 else 0.0
         
         with col1:
             st.metric("Known REE Sites", known_sites_count)
