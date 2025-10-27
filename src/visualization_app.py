@@ -36,11 +36,19 @@ class REEVisualizationApp:
         else:
             self.ree_occurrences = pd.DataFrame()
         
-        # Load predictions (prefer our test data for clear visualization)
+        # Load predictions (prefer our proper discoveries for clear visualization)
+        proper_path = 'data/proper_discoveries.csv'
         test_path = 'data/test_predictions.csv'
         demo_path = 'data/demo_predictions.csv'
         
-        if os.path.exists(test_path):
+        if os.path.exists(proper_path):
+            df = pd.read_csv(proper_path)
+            # Convert to GeoDataFrame
+            from shapely.geometry import Point
+            geometry = [Point(xy) for xy in zip(df['lon'], df['lat'])]
+            self.predictions = gpd.GeoDataFrame(df, geometry=geometry)
+            print(f"✅ Loaded proper discoveries: {len(self.predictions)} points")
+        elif os.path.exists(test_path):
             df = pd.read_csv(test_path)
             # Convert to GeoDataFrame
             from shapely.geometry import Point

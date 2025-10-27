@@ -55,7 +55,8 @@ class REEFeatureExtractor:
         
         # Try multiple USGS data sources
         urls = [
-            "https://mrdata.usgs.gov/ree/ree-csv.zip"
+            "https://mrdata.usgs.gov/ree/ree-csv.zip",
+            "https://mrdata.usgs.gov/mrds/mrds-csv.zip"  # General mineral deposits for REE
         ]
         
         ree_data = []
@@ -126,8 +127,8 @@ class REEFeatureExtractor:
                                 name = values[name_col] if name_col and len(values) > name_col else f"REE_{len(ree_data)}"
                                 mineral = values[mineral_col] if mineral_col and len(values) > mineral_col else "Unknown"
                                 
-                                # Filter to California bounding box
-                                if 32.5 <= lat <= 42.0 and -124.5 <= lon <= -114.0:
+                                # Filter to California + nearby states for more data
+                                if 32.0 <= lat <= 42.5 and -125.0 <= lon <= -113.0:
                                     # All entries in USGS REE database are REE-related
                                     ree_data.append({
                                         'name': name,
@@ -228,8 +229,8 @@ class REEFeatureExtractor:
                                 name = values[name_col] if name_col and len(values) > name_col else f"Non-REE_{len(non_ree_data)}"
                                 mineral = values[mineral_col] if mineral_col and len(values) > mineral_col else "Unknown"
                                 
-                                # Filter to California bounding box and exclude REE deposits
-                                if (32.5 <= lat <= 42.0 and -124.5 <= lon <= -114.0 and 
+                                # Filter to California + nearby states and exclude REE deposits
+                                if (32.0 <= lat <= 42.5 and -125.0 <= lon <= -113.0 and 
                                     'rare earth' not in mineral.lower() and 'ree' not in mineral.lower()):
                                     non_ree_data.append({
                                         'name': name,

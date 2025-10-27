@@ -96,14 +96,15 @@ class REEModelTrainer:
         """Train the Random Forest model."""
         print("Training Random Forest model...")
         
-        # Initialize Random Forest with specified parameters
+        # Optimize Random Forest for small datasets
         self.model = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=8,
-            min_samples_leaf=2,
+            n_estimators=50,  # Reduced for small dataset
+            max_depth=3,      # Shallow trees to prevent overfitting
+            min_samples_leaf=1,
             class_weight="balanced",
             random_state=42,
-            n_jobs=-1
+            n_jobs=-1,
+            max_features='sqrt'  # Reduce features per tree
         )
         
         # Train the model
