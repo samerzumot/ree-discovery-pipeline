@@ -143,17 +143,29 @@ class REEVisualizationApp:
         if len(predictions_gdf) == 0:
             return m
         
+        # Load training data to filter out existing sites
+        training_data = self.load_training_data()
+        
         # Filter high-potential points
         high_potential = predictions_gdf[predictions_gdf['ree_probability'] >= threshold]
         
         if len(high_potential) == 0:
             return m
         
-        # Only show new discoveries (not training sites)
+        # Filter out points that match training data coordinates
+        new_discoveries = []
+        for idx, row in high_potential.iterrows():
+            is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
+            if not is_training_site:
+                new_discoveries.append(row)
+        
+        if len(new_discoveries) == 0:
+            return m
+        
+        # Only show truly new discoveries (not in training data)
         pred_group = folium.FeatureGroup(name=f"New Discoveries (>{threshold})", show=True)
         
-        for idx, row in high_potential.iterrows():
-            # All prediction points are new discoveries (not shown as training sites)
+        for row in new_discoveries:
             folium.CircleMarker(
                 location=[row.geometry.y, row.geometry.x],
                 radius=8,
@@ -350,10 +362,21 @@ class REEVisualizationApp:
         # Only count REE sites (label=1), not background points (label=0)
         known_sites_count = len(training_data[training_data['label'] == 1]) if len(training_data) > 0 else 0
         
-        # Count new discoveries (all prediction points are new discoveries)
-        new_discoveries_count = len(self.predictions) if len(self.predictions) > 0 else 0
-        high_potential_count = len(self.predictions[self.predictions['ree_probability'] > threshold]) if len(self.predictions) > 0 else 0
-        max_prob = self.predictions['ree_probability'].max() if len(self.predictions) > 0 else 0.0
+        # Count new discoveries (prediction points not in training data)
+        new_discoveries_count = 0
+        high_potential_count = 0
+        max_prob = 0.0
+        
+        if len(self.predictions) > 0:
+            for idx, row in self.predictions.iterrows():
+                is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
+                if not is_training_site:
+                    new_discoveries_count += 1
+                    if row['ree_probability'] > threshold:
+                        high_potential_count += 1
+                
+                if row['ree_probability'] > max_prob:
+                    max_prob = row['ree_probability']
         
         with col1:
             st.metric("Known REE Sites", known_sites_count)
