@@ -146,61 +146,130 @@ class REEFeatureExtractor:
                 print(f"Error downloading from {url}: {e}")
                 continue
         
-        # If no data found, create known REE sites in California
+        # If no data found, fail rather than use hardcoded data
         if not ree_data:
-            print("No USGS data found, using known REE sites in California...")
-            known_sites = [
-                {'name': 'Mountain Pass Mine', 'lat': 35.4667, 'lon': -115.4667, 'mineral': 'Bastnaesite'},
-                {'name': 'Searles Lake', 'lat': 35.7667, 'lon': -117.3667, 'mineral': 'REE Brine'},
-                {'name': 'Sierra Nevada REE', 'lat': 37.2, 'lon': -119.5, 'mineral': 'Monazite'},
-                {'name': 'Mojave REE', 'lat': 34.8, 'lon': -116.2, 'mineral': 'Bastnaesite'},
-                {'name': 'Peninsular REE', 'lat': 33.1, 'lon': -117.1, 'mineral': 'Xenotime'}
-            ]
-            ree_data = known_sites
-            print(f"✓ Using {len(ree_data)} known REE sites")
+            raise ValueError("No USGS REE data found. Cannot proceed without real data.")
         
         return pd.DataFrame(ree_data)
     
-    def generate_background_points(self, n_points, ree_df):
-        """Generate random background points in California, avoiding REE sites."""
-        print(f"Generating {n_points} background points...")
+    def download_usgs_non_ree_data(self):
+        """Download real USGS non-REE mineral deposits for background points."""
+        print("Downloading USGS non-REE mineral deposits for background points...")
         
-        # Create buffer around REE sites to avoid them
-        ree_points = []
-        for _, row in ree_df.iterrows():
-            point = Point(row['lon'], row['lat'])
-            buffer = point.buffer(0.01)  # ~1km buffer
-            ree_points.append(buffer)
+        # Try to get real mineral deposit data from USGS
+        urls = [
+            "https://mrdata.usgs.gov/mrds/mrds-csv.zip"  # General mineral deposits
+        ]
         
-        # Generate random points in California
-        background_points = []
-        attempts = 0
-        max_attempts = n_points * 10
+        non_ree_data = []
         
-        while len(background_points) < n_points and attempts < max_attempts:
-            # Random point in California bounding box
-            lon = np.random.uniform(-124.5, -114.0)
-            lat = np.random.uniform(32.5, 42.0)
-            point = Point(lon, lat)
-            
-            # Check if point is far enough from REE sites
-            too_close = False
-            for buffer in ree_points:
-                if buffer.contains(point) or buffer.distance(point) < 0.01:
-                    too_close = True
+        for url in urls:
+            try:
+                print(f"Trying URL: {url}")
+                response = requests.get(url, timeout=30)
+                
+                if response.status_code != 200:
+                    print(f"Failed to download from {url}: {response.status_code}")
+                    continue
+                
+                # Extract CSV from zip
+                with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
+                    csv_files = [f for f in zip_file.namelist() if f.endswith('.csv')]
+                    main_csv = None
+                    for csv_file in csv_files:
+                        if 'mrds' in csv_file.lower():
+                            main_csv = csv_file
+                            break
+                    
+                    if not main_csv:
+                        print(f"No MRDS CSV found in {url}")
+                        continue
+                    
+                    # Read the CSV file
+                    csv_content = zip_file.read(main_csv).decode('utf-8', errors='ignore')
+                
+                # Parse CSV data
+                lines = csv_content.split('\n')
+                if len(lines) < 2:
+                    print(f"Insufficient data in {url}")
+                    continue
+                    
+                headers = lines[0].split(',')
+                
+                # Find relevant columns
+                lat_col = None
+                lon_col = None
+                name_col = None
+                mineral_col = None
+                
+                for i, header in enumerate(headers):
+                    header_lower = header.lower().strip()
+                    if header_lower == 'latitude':
+                        lat_col = i
+                    elif header_lower == 'longitude':
+                        lon_col = i
+                    elif header_lower == 'depname':
+                        name_col = i
+                    elif header_lower == 'deptype':
+                        mineral_col = i
+                
+                if lat_col is None or lon_col is None:
+                    print(f"Could not find lat/lon columns in {url}")
+                    continue
+                
+                # Extract data, filtering for non-REE deposits
+                for line in lines[1:]:
+                    if line.strip():
+                        values = line.split(',')
+                        if len(values) > max(lat_col, lon_col):
+                            try:
+                                lat = float(values[lat_col])
+                                lon = float(values[lon_col])
+                                name = values[name_col] if name_col and len(values) > name_col else f"Non-REE_{len(non_ree_data)}"
+                                mineral = values[mineral_col] if mineral_col and len(values) > mineral_col else "Unknown"
+                                
+                                # Filter to California bounding box and exclude REE deposits
+                                if (32.5 <= lat <= 42.0 and -124.5 <= lon <= -114.0 and 
+                                    'rare earth' not in mineral.lower() and 'ree' not in mineral.lower()):
+                                    non_ree_data.append({
+                                        'name': name,
+                                        'lat': lat,
+                                        'lon': lon,
+                                        'mineral': mineral
+                                    })
+                            except (ValueError, IndexError):
+                                continue
+                
+                if non_ree_data:
+                    print(f"✓ Found {len(non_ree_data)} non-REE deposits from {url}")
                     break
-            
-            if not too_close:
-                background_points.append({
-                    'name': f"Background_{len(background_points)}",
-                    'lat': lat,
-                    'lon': lon
-                })
-            
-            attempts += 1
+                    
+            except Exception as e:
+                print(f"Error downloading from {url}: {e}")
+                continue
         
-        print(f"✓ Generated {len(background_points)} background points")
-        return pd.DataFrame(background_points)
+        # If no real data found, fail rather than generate random points
+        if not non_ree_data:
+            raise ValueError("No USGS non-REE mineral data found. Cannot proceed without real background data.")
+        
+        return pd.DataFrame(non_ree_data)
+
+    def generate_background_points(self, n_points, ree_df):
+        """Use real USGS non-REE mineral deposits as background points."""
+        print(f"Getting {n_points} real non-REE mineral deposits for background points...")
+        
+        # Download real USGS non-REE mineral deposits
+        non_ree_df = self.download_usgs_non_ree_data()
+        
+        if len(non_ree_df) == 0:
+            raise ValueError("No real non-REE mineral deposits found for background points.")
+        
+        # If we have more deposits than needed, randomly sample them
+        if len(non_ree_df) > n_points:
+            non_ree_df = non_ree_df.sample(n=n_points, random_state=42)
+        
+        print(f"✓ Using {len(non_ree_df)} real non-REE mineral deposits as background points")
+        return non_ree_df
     
     def extract_gee_features(self, points_df, label):
         """Extract GEE features for given points."""
