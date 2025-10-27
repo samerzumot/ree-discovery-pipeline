@@ -333,7 +333,21 @@ class REEVisualizationApp:
             m = self.add_ree_occurrences(m, self.ree_occurrences)
         
         if show_heatmap and len(self.predictions) > 0:
-            m = self.add_prediction_heatmap(m, self.predictions, opacity)
+            # Only show heatmap if there are new discoveries (not training sites)
+            training_data = self.load_training_data()
+            new_discoveries = []
+            for idx, row in self.predictions.iterrows():
+                is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
+                if not is_training_site:
+                    new_discoveries.append(row)
+            
+            if len(new_discoveries) > 0:
+                # Convert new discoveries to GeoDataFrame for heatmap
+                import geopandas as gpd
+                from shapely.geometry import Point
+                geometry = [Point(row.geometry.x, row.geometry.y) for row in new_discoveries]
+                new_discoveries_gdf = gpd.GeoDataFrame(new_discoveries, geometry=geometry)
+                m = self.add_prediction_heatmap(m, new_discoveries_gdf, opacity)
         
         if show_predictions and len(self.predictions) > 0:
             m = self.add_prediction_points(m, self.predictions, threshold, show_training=False)
