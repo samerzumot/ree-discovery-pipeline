@@ -36,12 +36,20 @@ class REEVisualizationApp:
         else:
             self.ree_occurrences = pd.DataFrame()
         
-        # Load predictions (prefer our proper discoveries for clear visualization)
+        # Load predictions (prefer large-scale discoveries for best visualization)
+        large_scale_path = 'data/large_scale_high_potential.csv'
         proper_path = 'data/proper_discoveries.csv'
         test_path = 'data/test_predictions.csv'
         demo_path = 'data/demo_predictions.csv'
         
-        if os.path.exists(proper_path):
+        if os.path.exists(large_scale_path):
+            df = pd.read_csv(large_scale_path)
+            # Convert to GeoDataFrame
+            from shapely.geometry import Point
+            geometry = [Point(xy) for xy in zip(df['lon'], df['lat'])]
+            self.predictions = gpd.GeoDataFrame(df, geometry=geometry)
+            print(f"✅ Loaded large-scale discoveries: {len(self.predictions)} high-potential points")
+        elif os.path.exists(proper_path):
             df = pd.read_csv(proper_path)
             # Convert to GeoDataFrame
             from shapely.geometry import Point
@@ -121,6 +129,67 @@ class REEVisualizationApp:
         ree_group.add_to(m)
         return m
     
+    def add_comprehensive_map(self, m):
+        """Add comprehensive map showing training data vs predictions."""
+        # Load training data
+        training_data = self.load_training_data()
+        
+        if len(training_data) > 0:
+            # Add REE sites (training data) - green circles
+            ree_sites = training_data[training_data['label'] == 1]
+            for idx, row in ree_sites.iterrows():
+                folium.CircleMarker(
+                    location=[row['lat'], row['lon']],
+                    radius=8,
+                    popup=f'<b>KNOWN REE SITE</b><br>Name: {row["name"]}<br>Mineral: {row["mineral"]}<br>Lat: {row["lat"]:.4f}<br>Lon: {row["lon"]:.4f}<br>Elevation: {row["elevation_mean"]:.0f}m',
+                    color='darkgreen',
+                    fillColor='green',
+                    fillOpacity=0.8,
+                    weight=2
+                ).add_to(m)
+            
+            # Add non-REE sites (training data) - smaller gray circles
+            non_ree_sites = training_data[training_data['label'] == 0]
+            for idx, row in non_ree_sites.iterrows():
+                folium.CircleMarker(
+                    location=[row['lat'], row['lon']],
+                    radius=4,
+                    popup=f'<b>NON-REE SITE</b><br>Name: {row["name"]}<br>Mineral: {row["mineral"]}<br>Lat: {row["lat"]:.4f}<br>Lon: {row["lon"]:.4f}<br>Elevation: {row["elevation_mean"]:.0f}m',
+                    color='gray',
+                    fillColor='lightgray',
+                    fillOpacity=0.6,
+                    weight=1
+                ).add_to(m)
+        
+        # Add predictions with color coding
+        if len(self.predictions) > 0:
+            for idx, row in self.predictions.iterrows():
+                # Color based on probability
+                if row['ree_probability'] >= 0.65:
+                    color = 'darkred'
+                    fill_color = 'red'
+                    size = 10
+                elif row['ree_probability'] >= 0.60:
+                    color = 'orange'
+                    fill_color = 'orange'
+                    size = 8
+                else:
+                    color = 'darkorange'
+                    fill_color = 'yellow'
+                    size = 6
+                
+                folium.CircleMarker(
+                    location=[row.geometry.y, row.geometry.x],
+                    radius=size,
+                    popup=f'<b>PREDICTED DISCOVERY</b><br>Probability: {row["ree_probability"]:.3f}<br>Lat: {row.geometry.y:.4f}<br>Lon: {row.geometry.x:.4f}<br>Elevation: {row["elevation_mean"]:.0f}m<br>Status: AI-Generated Prediction',
+                    color=color,
+                    fillColor=fill_color,
+                    fillOpacity=0.8,
+                    weight=2
+                ).add_to(m)
+        
+        return m
+    
     def add_prediction_heatmap(self, m, predictions_gdf, opacity=0.6):
         """Add REE prediction heatmap to the map."""
         if len(predictions_gdf) == 0:
@@ -190,7 +259,11 @@ class REEVisualizationApp:
     def load_training_data(self):
         """Load training data to check for known sites."""
         try:
-            if os.path.exists('data/gee_features_california.csv'):
+            # Try large-scale data first, then fall back to California data
+            if os.path.exists('data/large_scale_features.csv'):
+                training_df = pd.read_csv('data/large_scale_features.csv')
+                return training_df
+            elif os.path.exists('data/gee_features_california.csv'):
                 training_df = pd.read_csv('data/gee_features_california.csv')
                 return training_df
             return pd.DataFrame()
@@ -316,10 +389,22 @@ class REEVisualizationApp:
         # Sidebar controls
         st.sidebar.header("Map Controls")
         
-        # Layer visibility
-        show_occurrences = st.sidebar.checkbox("Show Known REE Sites", value=True)
-        show_heatmap = st.sidebar.checkbox("Show Prediction Heatmap", value=True)
-        show_predictions = st.sidebar.checkbox("Show New Discoveries", value=True)
+        # Map view options
+        map_view = st.sidebar.selectbox(
+            "Map View",
+            ["Comprehensive View", "Standard View"],
+            help="Comprehensive View shows all training data vs predictions. Standard View shows only known REE sites and new discoveries."
+        )
+        
+        # Layer visibility (only for standard view)
+        if map_view == "Standard View":
+            show_occurrences = st.sidebar.checkbox("Show Known REE Sites", value=True)
+            show_heatmap = st.sidebar.checkbox("Show Prediction Heatmap", value=True)
+            show_predictions = st.sidebar.checkbox("Show New Discoveries", value=True)
+        else:
+            show_occurrences = True
+            show_heatmap = False
+            show_predictions = True
         
         # Heatmap opacity
         if show_heatmap:
@@ -336,29 +421,34 @@ class REEVisualizationApp:
         # Create map
         m = self.create_base_map()
         
-        # Add layers based on controls
-        if show_occurrences and len(self.ree_occurrences) > 0:
-            m = self.add_ree_occurrences(m, self.ree_occurrences)
-        
-        if show_heatmap and len(self.predictions) > 0:
-            # Only show heatmap if there are new discoveries (not training sites)
-            training_data = self.load_training_data()
-            new_discoveries = []
-            for idx, row in self.predictions.iterrows():
-                is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
-                if not is_training_site:
-                    new_discoveries.append(row)
+        # Add layers based on map view
+        if map_view == "Comprehensive View":
+            # Use comprehensive map showing all training data vs predictions
+            m = self.add_comprehensive_map(m)
+        else:
+            # Standard view with individual layer controls
+            if show_occurrences and len(self.ree_occurrences) > 0:
+                m = self.add_ree_occurrences(m, self.ree_occurrences)
             
-            if len(new_discoveries) > 0:
-                # Convert new discoveries to GeoDataFrame for heatmap
-                import geopandas as gpd
-                from shapely.geometry import Point
-                geometry = [Point(row.geometry.x, row.geometry.y) for row in new_discoveries]
-                new_discoveries_gdf = gpd.GeoDataFrame(new_discoveries, geometry=geometry)
-                m = self.add_prediction_heatmap(m, new_discoveries_gdf, opacity)
-        
-        if show_predictions and len(self.predictions) > 0:
-            m = self.add_prediction_points(m, self.predictions, threshold, show_training=False)
+            if show_heatmap and len(self.predictions) > 0:
+                # Only show heatmap if there are new discoveries (not training sites)
+                training_data = self.load_training_data()
+                new_discoveries = []
+                for idx, row in self.predictions.iterrows():
+                    is_training_site = self.is_training_site(row.geometry.x, row.geometry.y, training_data)
+                    if not is_training_site:
+                        new_discoveries.append(row)
+                
+                if len(new_discoveries) > 0:
+                    # Convert new discoveries to GeoDataFrame for heatmap
+                    import geopandas as gpd
+                    from shapely.geometry import Point
+                    geometry = [Point(row.geometry.x, row.geometry.y) for row in new_discoveries]
+                    new_discoveries_gdf = gpd.GeoDataFrame(new_discoveries, geometry=geometry)
+                    m = self.add_prediction_heatmap(m, new_discoveries_gdf, opacity)
+            
+            if show_predictions and len(self.predictions) > 0:
+                m = self.add_prediction_points(m, self.predictions, threshold, show_training=False)
         
         # Add layer control
         folium.LayerControl().add_to(m)
@@ -366,13 +456,23 @@ class REEVisualizationApp:
         # Display map
         st.subheader("Interactive Map")
         
-        # Add legend
-        st.markdown("""
-        **Map Legend:**
-        - **Green circles**: Known REE sites (verified deposits)
-        - **Red circles**: New discoveries (AI-generated predictions)
-        - **Heatmap**: Overall REE potential across the region
-        """)
+        # Add legend based on map view
+        if map_view == "Comprehensive View":
+            st.markdown("""
+            **Comprehensive Map Legend:**
+            - **Green circles**: Known REE sites (26 training sites)
+            - **Gray circles**: Non-REE mineral sites (200 background sites)
+            - **Red circles**: High-potential predictions (≥65%)
+            - **Orange circles**: Medium-potential predictions (60-65%)
+            - **Yellow circles**: Lower-potential predictions (<60%)
+            """)
+        else:
+            st.markdown("""
+            **Standard Map Legend:**
+            - **Green circles**: Known REE sites (verified deposits)
+            - **Red circles**: New discoveries (AI-generated predictions)
+            - **Heatmap**: Overall REE potential across the region
+            """)
         
         map_data = st_folium(m, width=1200, height=600)
         
