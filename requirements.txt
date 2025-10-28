@@ -18,6 +18,9 @@ pyproj>=3.4.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 
+# Model interpretability
+shap>=0.49.0
+
 # ML dependencies
 joblib>=1.3.0
 

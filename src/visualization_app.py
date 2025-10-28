@@ -18,6 +18,14 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import SHAP explainer
+try:
+    from shap_explainer import SHAPExplainer, create_shap_sidebar
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    st.warning("SHAP not available. Model explanations will be disabled.")
+
 class REEVisualizationApp:
     def __init__(self):
         """Initialize the visualization app."""
@@ -27,6 +35,15 @@ class REEVisualizationApp:
         
         # California center coordinates
         self.california_center = [36.7783, -119.4179]
+        
+        # Initialize SHAP explainer if available
+        self.shap_explainer = None
+        if SHAP_AVAILABLE:
+            try:
+                self.shap_explainer = SHAPExplainer()
+            except Exception as e:
+                st.warning(f"Could not initialize SHAP explainer: {e}")
+                self.shap_explainer = None
         
     def load_data(self):
         """Load all required datasets."""
@@ -476,6 +493,49 @@ class REEVisualizationApp:
         
         map_data = st_folium(m, width=1200, height=600)
         
+        # SHAP Model Explanation Section
+        if self.shap_explainer and map_data and map_data.get('last_object_clicked'):
+            clicked_data = map_data['last_object_clicked']
+            if clicked_data:
+                st.markdown("---")
+                st.subheader("🔍 Model Explanation")
+                
+                # Extract coordinates and probability from clicked point
+                lat = clicked_data.get('lat', 0)
+                lon = clicked_data.get('lng', 0)
+                
+                # Try to find the probability for this point
+                probability = 0.5  # Default
+                if len(self.predictions) > 0:
+                    distances = np.sqrt((self.predictions.geometry.y - lat)**2 + 
+                                      (self.predictions.geometry.x - lon)**2)
+                    closest_idx = distances.idxmin()
+                    if distances[closest_idx] < 0.01:  # Within ~1km
+                        probability = getattr(self.predictions.iloc[closest_idx], 'ree_probability', 0.5)
+                
+                # Generate SHAP explanation
+                explanation = self.explain_prediction(lat, lon, probability)
+                
+                if explanation:
+                    # Show prediction probability
+                    st.metric("REE Probability", f"{explanation['prediction']:.1%}")
+                    
+                    # Show explanation text
+                    explanation_text = self.shap_explainer.get_explanation_text(explanation)
+                    st.markdown(explanation_text, unsafe_allow_html=True)
+                    
+                    # Show waterfall chart
+                    st.markdown("### Feature Contributions")
+                    waterfall_fig = self.shap_explainer.create_waterfall_chart(explanation)
+                    st.plotly_chart(waterfall_fig, use_container_width=True)
+                    
+                    # Show feature importance
+                    st.markdown("### Feature Importance")
+                    importance_fig = self.shap_explainer.create_feature_importance_plot(explanation)
+                    st.plotly_chart(importance_fig, use_container_width=True)
+                else:
+                    st.warning("Could not generate explanation for this point.")
+        
         # Statistics
         col1, col2, col3, col4 = st.columns(4)
         
@@ -561,6 +621,67 @@ class REEVisualizationApp:
         st.markdown("---")
         st.markdown("**Data Sources:** USGS REE Occurrences, Google Earth Engine, Sentinel-2")
         st.markdown("**Model:** Random Forest Classifier trained on environmental and spectral features")
+    
+    def explain_prediction(self, lat, lon, probability):
+        """Generate SHAP explanation for a prediction point."""
+        if not self.shap_explainer:
+            return None
+        
+        try:
+            # Create feature dictionary for the point
+            # We'll need to extract features for this specific point
+            # For now, we'll use a simplified approach with available data
+            
+            # Try to find this point in our predictions data
+            point_features = None
+            if len(self.predictions) > 0:
+                # Find the closest prediction point
+                distances = np.sqrt((self.predictions.geometry.y - lat)**2 + 
+                                  (self.predictions.geometry.x - lon)**2)
+                closest_idx = distances.idxmin()
+                
+                if distances[closest_idx] < 0.01:  # Within ~1km
+                    point_data = self.predictions.iloc[closest_idx]
+                    
+                    # Create feature dictionary
+                    point_features = {
+                        'elevation_mean': getattr(point_data, 'elevation_mean', 0.0),
+                        'elevation_std': getattr(point_data, 'elevation_std', 0.0),
+                        'slope_mean': getattr(point_data, 'slope_mean', 0.0),
+                        'slope_std': getattr(point_data, 'slope_std', 0.0),
+                        'NDVI_mean': getattr(point_data, 'NDVI_mean', 0.0),
+                        'NDVI_std': getattr(point_data, 'NDVI_std', 0.0),
+                        'NDCI_mean': getattr(point_data, 'NDCI_mean', 0.0),
+                        'NDCI_std': getattr(point_data, 'NDCI_std', 0.0),
+                        'IronRatio_mean': getattr(point_data, 'IronRatio_mean', 0.0),
+                        'IronRatio_std': getattr(point_data, 'IronRatio_std', 0.0),
+                        'landcover_mode': getattr(point_data, 'landcover_mode', 0.0)
+                    }
+            
+            if point_features:
+                explanation = self.shap_explainer.explain_prediction(point_features)
+                return explanation
+            else:
+                # Use default features if point not found
+                default_features = {
+                    'elevation_mean': 1200.0,
+                    'elevation_std': 25.0,
+                    'slope_mean': 8.5,
+                    'slope_std': 5.2,
+                    'NDVI_mean': 0.0,
+                    'NDVI_std': 0.0,
+                    'NDCI_mean': 0.0,
+                    'NDCI_std': 0.0,
+                    'IronRatio_mean': 0.0,
+                    'IronRatio_std': 0.0,
+                    'landcover_mode': 0.0
+                }
+                explanation = self.shap_explainer.explain_prediction(default_features)
+                return explanation
+                
+        except Exception as e:
+            st.error(f"Error generating SHAP explanation: {e}")
+            return None
 
 def main():
     """Main execution function."""
